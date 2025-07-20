@@ -17,9 +17,16 @@ function DirectSearch() {
     setIsLoading(true);
     setError(null);
     
-    try {
-      // Make a direct search to an alternative API
-      const response = await fetch(`https://api.rawg.io/api/games?search=${encodeURIComponent(query)}&key=2e3bff0b2a814b8d941cee2bc760e632`);
+  // 1. Define your Supabase function URL and public anon key
+const supabaseFunctionUrl = 'https://afmtcpfxjrqmgjmygwez.supabase.co/functions/v1/get-game-recommendations';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmbXRjcGZ4anJxbWdqbXlnd2V6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI3MTg2NzgsImV4cCI6MjA2ODI5NDY3OH0.XhDlabjTxfM788yXuOzmY6a29NontTWUg4o572XQcMs';
+
+// 2. Call your Supabase function instead of the RAWG API
+const response = await fetch(`${supabaseFunctionUrl}?query=${encodeURIComponent(query)}`, {
+  headers: {
+    'Authorization': `Bearer ${supabaseAnonKey}`
+  }
+});
       
       if (!response.ok) {
         throw new Error(`API error: ${response.status}`);
