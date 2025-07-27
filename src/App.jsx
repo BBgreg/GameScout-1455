@@ -108,10 +108,40 @@ function App() {
     });
   };
 
-  const handleDatesConfirm = async (included, excluded, platforms, dateRange) => {
+ const handleDatesConfirm = async (dateRange) => {
     const userResponse = dateRange ? `Released: ${dateRange.from}-${dateRange.to}` : "Released: Any time";
     addUserMessage(userResponse);
     addBotMessage({ content: "Excellent! Searching for the perfect games...", isSearching: true });
+    
+    // Get the selections from the previous user messages
+    const finalIncluded = messages.find(m => m.content.startsWith("Including:"))?.selections?.included || [];
+    const finalExcluded = messages.find(m => m.content.startsWith("Excluding:"))?.selections?.excluded || [];
+    const finalPlatforms = messages.find(m => m.content.startsWith("Platforms:"))?.selections?.platforms || [];
+
+    try {
+      const dateString = dateRange ? `${dateRange.from}-01-01,${dateRange.to}-12-31` : "";
+      
+      // Correctly separate selections into tags and genres before the API call
+      const searchData = await invokeFunction('get-game-recommendations', {
+        tags: finalIncluded.filter(t => t.type === 'tag').map(t => t.slug).join(','),
+        genres: finalIncluded.filter(t => t.type === 'genre').map(t => t.slug).join(','),
+        exclude_tags: finalExcluded.filter(t => t.type === 'tag').map(t => t.slug).join(','),
+        exclude_genres: finalExcluded.filter(t => t.type === 'genre').map(t => t.slug).join(','),
+        platforms: finalPlatforms.map(p => p.value).join(','),
+        dates: dateString,
+      });
+      
+      setMessages(prev => [...prev.slice(0, -1), {
+        id: Date.now() + 1,
+        type: 'bot',
+        content: `Here are your recommendations:`,
+        component: 'GameResults',
+        props: { games: searchData, onRestart: startConversation }
+      }]);
+    } catch (err) {
+      setError('I encountered an error while searching. Please try again.');
+    }
+  };
     
     try {
       const dateString = dateRange ? `${dateRange.from}-01-01,${dateRange.to}-12-31` : "";
