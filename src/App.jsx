@@ -138,7 +138,7 @@ function App() {
   
   // --- UI SUB-COMPONENTS ---
 
-  const TagSelector = ({ tags, isExclude = false, onConfirm }) => {
+  const TagSelector = ({ tags, isExclude = false, onConfirm, disabled = false }) => {
     const [selected, setSelected] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const handleToggle = (tag) => {
@@ -150,21 +150,20 @@ function App() {
     return (
       <div className="mt-2 p-4 bg-gray-800/50 rounded-lg">
         <div className="relative mb-4">
-          <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search tags..." className="w-full p-2 pl-8 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:border-purple-500" />
+          <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search tags..." disabled={disabled} className="w-full p-2 pl-8 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:border-purple-500 disabled:opacity-50" />
           <SafeIcon icon={FiIcons.FiSearch} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
         </div>
         <div className="flex flex-wrap gap-2 mb-4 max-h-48 overflow-y-auto">
           {filteredTags.map((tag) => (
-            <button key={tag.slug} onClick={() => handleToggle(tag)} className={`px-3 py-1 rounded-full text-sm transition-colors ${selected.some(t => t.slug === tag.slug) ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>{tag.name}</button>
+            <button key={tag.slug} onClick={() => handleToggle(tag)} disabled={disabled} className={`px-3 py-1 rounded-full text-sm transition-colors ${selected.some(t => t.slug === tag.slug) ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300'} ${!disabled && 'hover:bg-gray-600'} ${disabled && 'cursor-default'}`}>{tag.name}</button>
           ))}
         </div>
-        {/* --- THIS IS THE CORRECTED LINE --- */}
-        <button onClick={() => onConfirm(selected, tags)} className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors">{isExclude ? 'Continue' : 'Done'}</button>
+        {!disabled && <button onClick={() => onConfirm(selected, tags)} className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors">{isExclude ? 'Continue' : 'Done'}</button>}
       </div>
     );
   };
 
-  const PlatformSelector = ({ onConfirm }) => {
+  const PlatformSelector = ({ onConfirm, disabled = false }) => {
     const [selected, setSelected] = useState([]);
     const handleToggle = (platform) => {
       setSelected(prev => prev.some(p => p.id === platform.id) ? prev.filter(p => p.id !== platform.id) : [...prev, platform]);
@@ -173,15 +172,15 @@ function App() {
       <div className="mt-2 p-4 bg-gray-800/50 rounded-lg">
         <div className="flex flex-wrap gap-2 mb-4">
           {platformOptions.map((platform) => (
-            <button key={platform.id} onClick={() => handleToggle(platform)} className={`px-3 py-1 rounded-full text-sm transition-colors ${selected.some(p => p.id === platform.id) ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>{platform.name}</button>
+            <button key={platform.id} onClick={() => handleToggle(platform)} disabled={disabled} className={`px-3 py-1 rounded-full text-sm transition-colors ${selected.some(p => p.id === platform.id) ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300'} ${!disabled && 'hover:bg-gray-600'} ${disabled && 'cursor-default'}`}>{platform.name}</button>
           ))}
         </div>
-        <button onClick={() => onConfirm(selected)} className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors">Continue</button>
+        {!disabled && <button onClick={() => onConfirm(selected)} className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors">Continue</button>}
       </div>
     );
   };
   
-  const DateSelector = ({ onConfirm }) => {
+  const DateSelector = ({ onConfirm, disabled = false }) => {
     const currentYear = new Date().getFullYear();
     const years = Array.from({ length: 45 }, (_, i) => currentYear - i);
     const [from, setFrom] = useState('2000');
@@ -191,19 +190,19 @@ function App() {
     return (
       <div className="mt-2 p-4 bg-gray-800/50 rounded-lg">
         <div className="flex flex-col sm:flex-row gap-4 items-center mb-4">
-          <select value={from} onChange={e => setFrom(e.target.value)} disabled={anyDate} className="w-full sm:w-1/2 p-2 bg-gray-700 border border-gray-600 rounded-md disabled:opacity-50">
+          <select value={from} onChange={e => setFrom(e.target.value)} disabled={anyDate || disabled} className="w-full sm:w-1/2 p-2 bg-gray-700 border border-gray-600 rounded-md disabled:opacity-50">
             {years.map(y => <option key={`from-${y}`} value={y}>{y}</option>)}
           </select>
           <span className="text-gray-400">to</span>
-          <select value={to} onChange={e => setTo(e.target.value)} disabled={anyDate} className="w-full sm:w-1/2 p-2 bg-gray-700 border border-gray-600 rounded-md disabled:opacity-50">
+          <select value={to} onChange={e => setTo(e.target.value)} disabled={anyDate || disabled} className="w-full sm:w-1/2 p-2 bg-gray-700 border border-gray-600 rounded-md disabled:opacity-50">
             {years.map(y => <option key={`to-${y}`} value={y}>{y}</option>)}
           </select>
         </div>
         <label className="flex items-center gap-2 cursor-pointer mb-4">
-          <input type="checkbox" checked={anyDate} onChange={() => setAnyDate(!anyDate)} className="form-checkbox bg-gray-700 border-gray-600 text-purple-500 focus:ring-purple-600" />
+          <input type="checkbox" checked={anyDate} onChange={() => setAnyDate(!anyDate)} disabled={disabled} className="form-checkbox bg-gray-700 border-gray-600 text-purple-500 focus:ring-purple-600" />
           Any release date
         </label>
-        <button onClick={() => onConfirm(anyDate ? null : { from, to })} className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors">Find Games</button>
+        {!disabled && <button onClick={() => onConfirm(anyDate ? null : { from, to })} className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors">Find Games</button>}
       </div>
     );
   };
@@ -241,16 +240,18 @@ function App() {
           {error && <div className="bg-red-900/50 p-4 rounded-lg text-red-200">{error}</div>}
           <div className="space-y-4">
             {messages.map((msg, index) => {
-              const isInteractive = index === messages.length - 1 && !isLoading;
+              const isLastMessage = index === messages.length - 1;
               return (
                 <div key={msg.id} className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-full lg:max-w-md px-4 py-2 rounded-lg ${msg.type === 'user' ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-100'}`}>
                     <p>{msg.content}</p>
                     {msg.isSearching && <div className="flex items-center gap-2 mt-2"><SafeIcon icon={FiIcons.FiLoader} className="animate-spin text-purple-400" /></div>}
-                    {isInteractive && msg.component === 'TagSelector' && <TagSelector {...msg.props} />}
-                    {isInteractive && msg.component === 'PlatformSelector' && <PlatformSelector {...msg.props} />}
-                    {isInteractive && msg.component === 'DateSelector' && <DateSelector {...msg.props} />}
-                    {isInteractive && msg.component === 'GameResults' && <GameResults {...msg.props} />}
+                    
+                    {/* Render components, but only make the last one interactive */}
+                    {msg.component === 'TagSelector' && <TagSelector {...msg.props} disabled={!isLastMessage || isLoading} />}
+                    {msg.component === 'PlatformSelector' && <PlatformSelector {...msg.props} disabled={!isLastMessage || isLoading} />}
+                    {msg.component === 'DateSelector' && <DateSelector {...msg.props} disabled={!isLastMessage || isLoading} />}
+                    {msg.component === 'GameResults' && <GameResults {...msg.props} />}
                   </div>
                 </div>
               );
