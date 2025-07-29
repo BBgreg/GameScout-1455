@@ -35,13 +35,13 @@ function AuthModal({ isOpen, onClose, onSuccess }) {
                   brandAccent: '#7c3aed',
                   inputBackground: 'rgb(31 41 55)',
                   inputBorder: 'rgb(75 85 99)',
+                  inputText: '#fff',
                 }
               }
             }
           }}
-          providers={['google']}
+          // Removed Google provider as requested
           redirectTo={window.location.origin}
-          onlyThirdPartyProviders={false}
         />
       </div>
     </div>
@@ -56,7 +56,7 @@ function App() {
   const [error, setError] = useState(null);
   const [user, setUser] = useState(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [pendingResults, setPendingResults] = useState(null);
+  const [pendingQuery, setPendingQuery] = useState(null); // Store query text instead of results
 
   const endOfMessagesRef = useRef(null);
 
@@ -70,27 +70,59 @@ function App() {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user || null);
-      
-      // If user just logged in and we have pending results, display them
-      if (session?.user && pendingResults) {
-        setMessages(prev => [...prev.slice(0, -1), {
-          id: Date.now() + 2,
-          type: 'bot',
-          component: 'GameResults',
-          props: { 
-            games: pendingResults.games || pendingResults, 
-            onRestart: () => startConversation(true) 
-          }
-        }]);
-        setPendingResults(null);
-        setAuthModalOpen(false);
-      }
     });
 
     return () => {
       subscription?.unsubscribe();
     };
-  }, [pendingResults]);
+  }, []);
+
+  // Effect to handle fetching recommendations after successful login
+  useEffect(() => {
+    // If user is logged in and there's a pending query, fetch the recommendations
+    const fetchPendingRecommendations = async () => {
+      if (user && pendingQuery) {
+        // Show loading message
+        setMessages(prev => [...prev, {
+          id: Date.now() + 1,
+          type: 'bot',
+          isSearching: true,
+          content: "Scouting for games..."
+        }]);
+        
+        try {
+          // Fetch recommendations using the stored query
+          const gameRecommendations = await invokeOpenAIFunction(pendingQuery);
+          
+          // Display results
+          setMessages(prev => [...prev.slice(0, -1), {
+            id: Date.now() + 2,
+            type: 'bot',
+            component: 'GameResults',
+            props: { 
+              games: gameRecommendations.games || gameRecommendations, 
+              onRestart: () => startConversation(true) 
+            }
+          }]);
+          
+          // Clear the pending query
+          setPendingQuery(null);
+        } catch (err) {
+          // Handle error
+          setMessages(prev => [...prev.slice(0, -1), {
+            id: Date.now() + 2,
+            type: 'bot',
+            content: `I encountered an error: ${err.message}`,
+            component: 'RestartButton',
+            props: { onRestart: () => startConversation(true) }
+          }]);
+          setPendingQuery(null);
+        }
+      }
+    };
+    
+    fetchPendingRecommendations();
+  }, [user, pendingQuery]);
 
   // --- HELPER FUNCTION TO CALL OPENAI BACKEND ---
   const invokeOpenAIFunction = async (query) => {
@@ -124,6 +156,7 @@ function App() {
   const startConversation = (isRestart = false) => {
     setError(null);
     setIsLoading(false);
+    setPendingQuery(null);
     const welcomeMessage = { 
       id: Date.now(), 
       type: 'bot', 
@@ -151,18 +184,22 @@ function App() {
     if (!input.trim()) return;
 
     const userMessage = { id: Date.now(), type: 'user', content: input };
-    const loadingMessage = { id: Date.now() + 1, type: 'bot', isSearching: true, content: "Scouting for games..." };
-    
-    setMessages(prev => [...prev, userMessage, loadingMessage]);
+    setMessages(prev => [...prev, userMessage]);
     const currentQuery = input;
     setInput(''); // Clear the input field immediately
 
-    try {
-      const gameRecommendations = await invokeOpenAIFunction(currentQuery);
+    // Check if user is authenticated
+    if (user) {
+      // User is authenticated, show loading and fetch results
+      setMessages(prev => [...prev, {
+        id: Date.now() + 1,
+        type: 'bot',
+        isSearching: true,
+        content: "Scouting for games..."
+      }]);
       
-      // Check if user is authenticated
-      if (user) {
-        // User is authenticated, show results immediately
+      try {
+        const gameRecommendations = await invokeOpenAIFunction(currentQuery);
         setMessages(prev => [...prev.slice(0, -1), {
           id: Date.now() + 2,
           type: 'bot',
@@ -172,30 +209,25 @@ function App() {
             onRestart: () => startConversation(true) 
           }
         }]);
-      } else {
-        // User is not authenticated, store results and show auth modal
-        setPendingResults(gameRecommendations);
+      } catch (err) {
+        // Replace the "loading" message with an error
         setMessages(prev => [...prev.slice(0, -1), {
           id: Date.now() + 2,
           type: 'bot',
-          content: "I've found some great game recommendations for you! Please sign in to view them.",
-          component: 'AuthPrompt',
-          props: { 
-            onAuthClick: () => setAuthModalOpen(true),
-            onRestart: () => startConversation(true)
-          }
+          content: `I encountered an error: ${err.message}`,
+          component: 'RestartButton',
+          props: { onRestart: () => startConversation(true) }
         }]);
       }
-
-    } catch (err) {
-      // Replace the "loading" message with an error
-      setMessages(prev => [...prev.slice(0, -1), {
-        id: Date.now() + 2,
+    } else {
+      // User is not authenticated, store the query and show auth modal
+      setPendingQuery(currentQuery);
+      setMessages(prev => [...prev, {
+        id: Date.now() + 1,
         type: 'bot',
-        content: `I encountered an error: ${err.message}`,
-        component: 'RestartButton',
-        props: { onRestart: () => startConversation(true) }
+        content: "Please sign in to see game recommendations based on your request.",
       }]);
+      setAuthModalOpen(true);
     }
   };
   
