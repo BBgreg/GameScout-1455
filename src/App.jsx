@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as FiIcons from 'react-icons/fi';
+import supabase from './lib/supabase';
+import { Auth } from '@supabase/auth-ui-react';
+import { ThemeSupa } from '@supabase/auth-ui-shared';
 
 // A small, safe component to render icons
 function SafeIcon({ icon: Icon, ...props }) {
@@ -7,25 +10,94 @@ function SafeIcon({ icon: Icon, ...props }) {
   return <Icon {...props} />;
 }
 
+// Modal component for authentication
+function AuthModal({ isOpen, onClose, onSuccess }) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-gray-900 p-6 rounded-lg w-full max-w-md border border-gray-700">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-xl font-bold text-white">Sign in to view your recommendations</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-white">
+            <SafeIcon icon={FiIcons.FiX} />
+          </button>
+        </div>
+        
+        <Auth
+          supabaseClient={supabase}
+          appearance={{
+            theme: ThemeSupa,
+            variables: {
+              default: {
+                colors: {
+                  brand: '#9333ea',
+                  brandAccent: '#7c3aed',
+                  inputBackground: 'rgb(31 41 55)',
+                  inputBorder: 'rgb(75 85 99)',
+                }
+              }
+            }
+          }}
+          providers={['google']}
+          redirectTo={window.location.origin}
+          onlyThirdPartyProviders={false}
+        />
+      </div>
+    </div>
+  );
+}
+
 // The main App component
 function App() {
   const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState(''); // NEW: State for the user's text input
+  const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [user, setUser] = useState(null);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [pendingResults, setPendingResults] = useState(null);
 
   const endOfMessagesRef = useRef(null);
 
-  // --- SUPABASE CONFIG ---
-  const supabaseFunctionUrl = 'https://afmtcpfxjrqmgjmygwez.supabase.co/functions/v1/get-openai-recommendations';
-  const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmbXRjcGZ4anJxbWdqbXlnd2V6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI3MTg2NzgsImV4cCI6MjA2ODI5NDY3OH0.XhDlabjTxfM788yXuOzmY6a29NontTWUg4o572XQcMs';
+  // Check for user session on load
+  useEffect(() => {
+    // Get current session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user || null);
+    });
 
-  // --- NEW: HELPER FUNCTION TO CALL OPENAI BACKEND ---
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+      
+      // If user just logged in and we have pending results, display them
+      if (session?.user && pendingResults) {
+        setMessages(prev => [...prev.slice(0, -1), {
+          id: Date.now() + 2,
+          type: 'bot',
+          component: 'GameResults',
+          props: { 
+            games: pendingResults.games || pendingResults, 
+            onRestart: () => startConversation(true) 
+          }
+        }]);
+        setPendingResults(null);
+        setAuthModalOpen(false);
+      }
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, [pendingResults]);
+
+  // --- HELPER FUNCTION TO CALL OPENAI BACKEND ---
   const invokeOpenAIFunction = async (query) => {
-    const response = await fetch(supabaseFunctionUrl, {
+    const response = await fetch(`https://${supabase.supabaseUrl.split('//')[1]}/functions/v1/get-openai-recommendations`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${supabaseAnonKey}`,
+        'Authorization': `Bearer ${supabase.supabaseKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ query: query }),
@@ -52,7 +124,13 @@ function App() {
   const startConversation = (isRestart = false) => {
     setError(null);
     setIsLoading(false);
-    const welcomeMessage = { id: Date.now(), type: 'bot', content: isRestart ? "Let's start over. What kind of game are you looking for?" : "Hello! I'm Game Scout. Describe the kind of game you want to play." };
+    const welcomeMessage = { 
+      id: Date.now(), 
+      type: 'bot', 
+      content: isRestart 
+        ? "Let's start over. What kind of game are you looking for?" 
+        : "Hello! I'm Game Scout. Describe the kind of game you want to play." 
+    };
     setMessages([welcomeMessage]);
   };
 
@@ -61,7 +139,13 @@ function App() {
     startConversation();
   }, []);
 
-  // --- NEW: CORE LOGIC TO HANDLE USER'S QUERY ---
+  // Handle user logout
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
+
+  // --- CORE LOGIC TO HANDLE USER'S QUERY ---
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!input.trim()) return;
@@ -76,13 +160,32 @@ function App() {
     try {
       const gameRecommendations = await invokeOpenAIFunction(currentQuery);
       
-      // Replace the "loading" message with the final game results
-      setMessages(prev => [...prev.slice(0, -1), {
-        id: Date.now() + 2,
-        type: 'bot',
-        component: 'GameResults',
-        props: { games: gameRecommendations.games || gameRecommendations, onRestart: () => startConversation(true) }
-      }]);
+      // Check if user is authenticated
+      if (user) {
+        // User is authenticated, show results immediately
+        setMessages(prev => [...prev.slice(0, -1), {
+          id: Date.now() + 2,
+          type: 'bot',
+          component: 'GameResults',
+          props: { 
+            games: gameRecommendations.games || gameRecommendations, 
+            onRestart: () => startConversation(true) 
+          }
+        }]);
+      } else {
+        // User is not authenticated, store results and show auth modal
+        setPendingResults(gameRecommendations);
+        setMessages(prev => [...prev.slice(0, -1), {
+          id: Date.now() + 2,
+          type: 'bot',
+          content: "I've found some great game recommendations for you! Please sign in to view them.",
+          component: 'AuthPrompt',
+          props: { 
+            onAuthClick: () => setAuthModalOpen(true),
+            onRestart: () => startConversation(true)
+          }
+        }]);
+      }
 
     } catch (err) {
       // Replace the "loading" message with an error
@@ -96,7 +199,24 @@ function App() {
     }
   };
   
-  // --- RETAINED UI SUB-COMPONENTS ---
+  // --- UI SUB-COMPONENTS ---
+  const AuthPrompt = ({ onAuthClick, onRestart }) => (
+    <div className="mt-3 space-y-4">
+      <button
+        onClick={onAuthClick}
+        className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+      >
+        Sign in to View Results
+      </button>
+      <button
+        onClick={onRestart}
+        className="w-full px-4 py-2 bg-transparent hover:bg-gray-700 text-gray-300 border border-gray-600 rounded-lg transition-colors"
+      >
+        Try a Different Search
+      </button>
+    </div>
+  );
+
   const GameResults = ({ games, onRestart }) => {
     if (!games || games.length === 0) {
       return (
@@ -158,12 +278,27 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-900 text-white p-4 font-sans">
       <div className="max-w-3xl mx-auto flex flex-col h-[calc(100vh-2rem)]">
-        <header className="text-center mb-4">
+        <header className="text-center mb-4 relative">
           <div className="flex items-center justify-center gap-2 mb-2">
             <SafeIcon icon={FiIcons.FiGamepad} className="text-purple-400 text-3xl" />
             <h1 className="text-3xl font-bold">Game Scout</h1>
           </div>
           <p className="text-gray-400">AI-Powered Game Recommendations</p>
+          
+          {user && (
+            <div className="absolute right-0 top-0 flex items-center">
+              <div className="text-sm text-gray-400 mr-2">
+                {user.email?.split('@')[0] || 'User'}
+              </div>
+              <button
+                onClick={handleLogout}
+                className="p-2 text-gray-400 hover:text-white"
+                title="Logout"
+              >
+                <SafeIcon icon={FiIcons.FiLogOut} />
+              </button>
+            </div>
+          )}
         </header>
         
         <main className="flex-grow space-y-4 overflow-y-auto pr-2">
@@ -180,6 +315,7 @@ function App() {
                 switch (msg.component) {
                   case 'GameResults': return <GameResults {...msg.props} />;
                   case 'RestartButton': return <RestartButton {...msg.props} />;
+                  case 'AuthPrompt': return <AuthPrompt {...msg.props} />;
                   default: return null;
                 }
               };
@@ -194,7 +330,7 @@ function App() {
                     {msg.content && <p>{msg.content}</p>}
                     {msg.isSearching && (
                       <div className="flex items-center gap-2">
-                         <SafeIcon icon={FiIcons.FiLoader} className="animate-spin text-purple-40-400" />
+                         <SafeIcon icon={FiIcons.FiLoader} className="animate-spin text-purple-400" />
                          <span>Searching...</span>
                       </div>
                     )}
@@ -208,7 +344,7 @@ function App() {
           <div ref={endOfMessagesRef} />
         </main>
 
-        {/* --- NEW: CHAT INPUT FORM --- */}
+        {/* --- CHAT INPUT FORM --- */}
         <footer className="mt-4">
           <form onSubmit={handleSubmit}>
             <div className="flex items-center bg-gray-800 rounded-lg p-2 border border-gray-700 focus-within:border-purple-500 transition-colors">
@@ -227,6 +363,16 @@ function App() {
           </form>
         </footer>
       </div>
+      
+      {/* Authentication Modal */}
+      <AuthModal 
+        isOpen={authModalOpen} 
+        onClose={() => setAuthModalOpen(false)} 
+        onSuccess={() => {
+          setAuthModalOpen(false);
+          // Results will be shown via the auth state change listener
+        }} 
+      />
     </div>
   );
 }
